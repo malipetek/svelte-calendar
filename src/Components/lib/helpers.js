@@ -7,8 +7,17 @@ const getCalendarPage = (month, year, dayProps, weekStart = 0) => {
   let weeks = [];
   while (date.getMonth() !== nextMonth || date.getDay() !== weekStart || weeks.length !== 6) {
     if (date.getDay() === weekStart) weeks.unshift({ days: [], id: `${year}${month}${year}${weeks.length}` });
+    let checkStartDate = new Date(date.getTime());
+    let checkEndDate = new Date(date.getTime());
+    checkStartDate.setDate(checkStartDate.getDate() - 1);
+    checkEndDate.setDate(checkEndDate.getDate() + 1);
     const updated = Object.assign({
       partOfMonth: date.getMonth() === month,
+      firstOfMonth: checkStartDate.getMonth() !== date.getMonth(),
+      lastOfMonth: checkEndDate.getMonth() !== date.getMonth(),
+      day: date.getDate(),
+      month: date.getMonth(),
+      year: date.getFullYear(),
       date: new Date(date)
     }, dayProps(date));
     weeks[0].days.push(updated);
@@ -18,15 +27,18 @@ const getCalendarPage = (month, year, dayProps, weekStart = 0) => {
   return { month, year, weeks };
 };
 
-const getDayPropsHandler = (start, end, selectableCallback) => {
+function getDayPropsHandler(start, end, selectableCallback) {
   let today = new Date();
   today.setHours(0, 0, 0, 0);
-  return date => ({
-    selectable: date >= start && date <= end
-     && (!selectableCallback || selectableCallback(date)),
-    isToday: date.getTime() === today.getTime()
-  });
-};
+  return date => {
+    const isInRange = date >= start && date <= end;
+    return {
+      isInRange,
+      selectable: isInRange && (!selectableCallback || selectableCallback(date)),
+      isToday: date.getTime() === today.getTime()
+    };
+  };
+}
 
 export function getMonths(start, end, selectableCallback = null, weekStart = 0) {
   start.setHours(0, 0, 0, 0);
@@ -45,3 +57,6 @@ export function getMonths(start, end, selectableCallback = null, weekStart = 0) 
 export const areDatesEquivalent = (a, b) => a.getDate() === b.getDate()
   && a.getMonth() === b.getMonth()
   && a.getFullYear() === b.getFullYear();
+
+export const isDateBetweenSelected = (a, b, c) => c.getTime() > a.getTime()
+  && c.getTime() < b.getTime();

@@ -1,96 +1,119 @@
 <script>
-  import Month from './Month.svelte';
+  import Months from './Month.svelte';
   import NavBar from './NavBar.svelte';
   import Popover from './Popover.svelte';
-  import { getMonths, areDatesEquivalent } from './lib/helpers';
-  import { formatDate, internationalize } from 'timeUtils';
+  import { formatDate } from 'timeUtils';
+  import { getMonths } from './lib/helpers';
+  import { contextKey } from './lib/context';
   import { keyCodes, keyCodesArray } from './lib/keyCodes';
-  import { onMount, createEventDispatcher } from 'svelte';
+  import { onMount, createEventDispatcher, setContext } from 'svelte';
 
   const dispatch = createEventDispatcher();
   const today = new Date();
 
-  let popover;
-
-  export let format = '#{m}/#{d}/#{Y}';
+  export let rangePicker = false;
+  export let dualSelector = false;
+  export let format = '#{Y}/#{m}/#{d}';
   export let start = new Date(1987, 9, 29);
   export let end = new Date(2020, 9, 29);
   export let selected = today;
-  export let dateChosen = false;
+  export let selectedEnd = rangePicker ? today : null;
+  export let dateChosenStart = false;
+  export let dateChosenEnd = false;
   export let trigger = null;
   export let selectableCallback = null;
   export let weekStart = 0;
-  export let daysOfWeek = [
-    ['Sunday', 'Sun'],
-    ['Monday', 'Mon'],
-    ['Tuesday', 'Tue'],
-    ['Wednesday', 'Wed'],
-    ['Thursday', 'Thu'],
-    ['Friday', 'Fri'],
-    ['Saturday', 'Sat']
-  ];
-  export let monthsOfYear = [
-    ['January', 'Jan'],
-    ['February', 'Feb'],
-    ['March', 'Mar'],
-    ['April', 'Apr'],
-    ['May', 'May'],
-    ['June', 'Jun'],
-    ['July', 'Jul'],
-    ['August', 'Aug'],
-    ['September', 'Sep'],
-    ['October', 'Oct'],
-    ['November', 'Nov'],
-    ['December', 'Dec']
-  ];
 
-  internationalize({ daysOfWeek, monthsOfYear });
-  let sortedDaysOfWeek = weekStart === 0 ? daysOfWeek : (() => {
-    let dow = daysOfWeek.slice();
-    dow.push(dow.shift());
-    return dow;
-  })();
+  const config = {
+    isRangePicker: rangePicker,
+    dualSelector: dualSelector
+  };
+
+  setContext(contextKey, {
+    config
+  });
+
+  // theming variables:
+  export let style = '';
+  export let buttonBackgroundColor = '#fff';
+  export let buttonBorderColor = '#eee';
+  export let buttonTextColor = '#333';
+  export let highlightColor = '#f7901e';
+  export let passiveHighlightColor = '#FCD9B1';
+  export let dayBackgroundColor = 'none';
+  export let dayTextColor = '#4a4a4a';
+  export let dayHighlightedBackgroundColor = '#efefef';
+  export let dayHighlightedTextColor = '#4a4a4a';
+
+  let popover;
+  let firstDate = true;
+  let width = rangePicker ? null : 340;
 
   let highlighted = today;
   let shouldShakeDate = false;
   let shakeHighlightTimeout;
-  let month = today.getMonth();
-  let year = today.getFullYear();
+  let month = today && today.getMonth();
+  let secMonth = today && today.getMonth();
+  let year = today && today.getFullYear();
+  let secYear = today && today.getFullYear();
 
   let isOpen = false;
   let isClosing = false;
 
   today.setHours(0, 0, 0, 0);
 
-  function assignmentHandler(formatted) {
-    if (!trigger) return;
-    trigger.innerHTML = formatted;
-  }
-
   $: months = getMonths(start, end, selectableCallback, weekStart);
 
   let monthIndex = 0;
+  let secMonthIndex = 0;
   $: {
     monthIndex = 0;
+    secMonthIndex = 0;
     for (let i = 0; i < months.length; i += 1) {
       if (months[i].month === month && months[i].year === year) {
         monthIndex = i;
       }
+      if (config.isRangePicker && months[i].month === secMonth && months[i].year === secYear) {
+        secMonthIndex = i;
+      }
     }
   }
   $: visibleMonth = months[monthIndex];
+  $: visibleSecMonth = months[secMonthIndex];
 
-  $: visibleMonthId = year + month / 100;
+  $: visibleMonthsId = year + month / 100;
   $: lastVisibleDate = visibleMonth.weeks[visibleMonth.weeks.length - 1].days[6].date;
   $: firstVisibleDate = visibleMonth.weeks[0].days[0].date;
   $: canIncrementMonth = monthIndex < months.length - 1;
   $: canDecrementMonth = monthIndex > 0;
+  $: canIncrementSecMonth = secMonthIndex < months.length - 1;
+  $: canDecrementSecMonth = secMonthIndex > 0;
+  $: wrapperStyle = `
+    --button-background-color: ${buttonBackgroundColor};
+    --button-border-color: ${buttonBorderColor};
+    --button-text-color: ${buttonTextColor};
+    --highlight-color: ${highlightColor};
+    --passive-highlight-color: ${passiveHighlightColor};
+    --day-background-color: ${dayBackgroundColor};
+    --day-text-color: ${dayTextColor};
+    --day-highlighted-background-color: ${dayHighlightedBackgroundColor};
+    --day-highlighted-text-color: ${dayHighlightedTextColor};
+    ${style}
+  `;
 
   export let formattedSelected;
+  export let formattedSelectedEnd;
+  export let formattedCombined;
   $: {
-    formattedSelected = typeof format === 'function'
-      ? format(selected)
-      : formatDate(selected, format);
+    const isFn = typeof format === 'function';
+
+    formattedSelected = isFn ? format(selected) : formatDate(selected, format);
+    if (config.isRangePicker) {
+      formattedSelectedEnd = isFn ? format(selectedEnd) : formatDate(selectedEnd, format);
+      dispatch('rangeSelected', {});
+    }
+
+    formattedCombined = rangePicker ? `${formattedSelected} - ${formattedSelectedEnd}` : formattedSelected;
   }
 
   onMount(() => {
@@ -100,49 +123,69 @@
 
   function changeMonth(selectedMonth) {
     month = selectedMonth;
+    highlighted = new Date(year, month, 1);
   }
 
-  function incrementMonth(direction, date) {
+  function changeSecMonth(selectedMonth) {
+    secMonth = selectedMonth;
+  }
+
+  function incrementMonth(direction, date = 1) {
     if (direction === 1 && !canIncrementMonth) return;
     if (direction === -1 && !canDecrementMonth) return;
     let current = new Date(year, month, 1);
     current.setMonth(current.getMonth() + direction);
     month = current.getMonth();
     year = current.getFullYear();
-    highlighted = new Date(year, month, date || 1);
+    highlighted = new Date(year, month, date);
   }
 
-  function getDefaultHighlighted() {
-    return new Date(selected);
+  function incrementSecMonth(direction) {
+    if (direction === 1 && !canIncrementSecMonth) return;
+    if (direction === -1 && !canDecrementSecMonth) return;
+    let current = new Date(secYear, secMonth, 1);
+    current.setMonth(current.getMonth() + direction);
+    secMonth = current.getMonth();
+    secYear = current.getFullYear();
   }
 
-  function incrementDayHighlighted(amount) {
-    highlighted = new Date(highlighted);
-    highlighted.setDate(highlighted.getDate() + amount);
-    if (amount > 0 && highlighted > lastVisibleDate) {
-      return incrementMonth(1, highlighted.getDate());
-    }
-    if (amount < 0 && highlighted < firstVisibleDate) {
-      return incrementMonth(-1, highlighted.getDate());
-    }
-    return highlighted;
-  }
-
-  function getDay(m, date) {
-    for (let i = 0; i < m.weeks.length; i += 1) {
-      for (let j = 0; j < m.weeks[i].days.length; j += 1) {
-        if (areDatesEquivalent(m.weeks[i].days[j].date, date)) {
-          return m.weeks[i].days[j];
-        }
+  function getDay(m, d, y) {
+    const theMonth = months.find(aMonth => aMonth.month === m && aMonth.year === y);
+    if (!theMonth) return null;
+    for (let i = 0; i < theMonth.weeks.length; i += 1) {
+      for (let j = 0; j < theMonth.weeks[i].days.length; j += 1) {
+        let aDay = theMonth.weeks[i].days[j];
+        if (aDay.month === m && aDay.day === d && aDay.year === y) return aDay;
       }
     }
     return null;
   }
 
+  function incrementDayHighlighted(amount) {
+    let proposedDate = new Date(highlighted);
+    proposedDate.setDate(highlighted.getDate() + amount);
+    let correspondingDayObj = getDay(
+      proposedDate.getMonth(),
+      proposedDate.getDate(),
+      proposedDate.getFullYear()
+    );
+    if (!correspondingDayObj || !correspondingDayObj.isInRange) return;
+    highlighted = proposedDate;
+    if (amount > 0 && highlighted > lastVisibleDate) {
+      incrementMonth(1, highlighted.getDate());
+    }
+    if (amount < 0 && highlighted < firstVisibleDate) {
+      incrementMonth(-1, highlighted.getDate());
+    }
+  }
+
   function checkIfVisibleDateIsSelectable(date) {
-    const day = getDay(visibleMonth, date);
-    if (!day) return false;
-    return day.selectable;
+    const proposedDay = getDay(
+      date.getMonth(),
+      date.getDate(),
+      date.getFullYear()
+    );
+    return proposedDay && proposedDay.selectable;
   }
 
   function shakeDate(date) {
@@ -154,50 +197,34 @@
   }
 
   function assignValueToTrigger(formatted) {
-    assignmentHandler(formatted);
-  }
-
-  function registerSelection(chosen) {
-    if (!checkIfVisibleDateIsSelectable(chosen)) return shakeDate(chosen);
-    // eslint-disable-next-line
-    close();
-    selected = chosen;
-    dateChosen = true;
-    assignValueToTrigger(formattedSelected);
-    return dispatch('dateSelected', { date: chosen });
+    if (!trigger) { return; }
+    trigger.innerHTML = formatted;
   }
 
   function handleKeyPress(evt) {
-    if (keyCodesArray.indexOf(evt.keyCode) === -1) return;
+    if (keyCodesArray.indexOf(evt.keyCode) === -1) return false;
     evt.preventDefault();
     switch (evt.keyCode) {
       case keyCodes.left:
-        incrementDayHighlighted(-1);
-        break;
+        return incrementDayHighlighted(-1);
       case keyCodes.up:
-        incrementDayHighlighted(-7);
-        break;
+        return incrementDayHighlighted(-7);
       case keyCodes.right:
-        incrementDayHighlighted(1);
-        break;
+        return incrementDayHighlighted(1);
       case keyCodes.down:
-        incrementDayHighlighted(7);
-        break;
+        return incrementDayHighlighted(7);
       case keyCodes.pgup:
-        incrementMonth(-1);
-        break;
+        return incrementMonth(-1);
       case keyCodes.pgdown:
-        incrementMonth(1);
-        break;
+        return incrementMonth(1);
       case keyCodes.escape:
         // eslint-disable-next-line
-        close();
-        break;
+        return close();
       case keyCodes.enter:
-        registerSelection(highlighted);
-        break;
+        // eslint-disable-next-line
+        return registerSelection(highlighted);
       default:
-        break;
+        return false;
     }
   }
 
@@ -211,86 +238,67 @@
     registerClose();
   }
 
+  function registerSelection(chosen) {
+    if (!checkIfVisibleDateIsSelectable(chosen)) {
+      return shakeDate(chosen);
+    }
+
+    if (!config.isRangePicker) {
+      selected = chosen;
+      assignValueToTrigger(formattedSelected);
+      close();
+      return dispatch('dateSelected', { date: chosen });
+    }
+
+    if (firstDate) {
+      if (dateChosenStart) {
+        selectedEnd = chosen;
+      }
+      if (chosen <= selectedEnd || !dateChosenStart) {
+        selected = chosen;
+        selectedEnd = selected;
+      }
+    } else {
+      if (chosen >= selected) {
+        selectedEnd = chosen;
+      } else {
+        selectedEnd = selected;
+        selected = chosen;
+      }
+      close();
+      dateChosenEnd = true;
+    }
+  
+    dateChosenStart = true;
+    firstDate = !firstDate;
+    assignValueToTrigger(formattedSelected);
+    assignValueToTrigger(formattedSelectedEnd);
+    return dispatch('dateSelected', { date: chosen });
+  }
+
   function registerOpen() {
-    highlighted = getDefaultHighlighted();
+    highlighted = new Date(selected);
     month = selected.getMonth();
     year = selected.getFullYear();
+
+    if (config.isRangePicker) {
+      if (selected.getMonth() === selectedEnd.getMonth()
+      && selected.getFullYear() === selectedEnd.getFullYear()) {
+        secMonth = selected.getMonth() + 1;
+        secYear = selected.getFullYear();
+      } else {
+        secMonth = selectedEnd.getMonth();
+        secYear = selectedEnd.getFullYear();
+      }
+    }
     document.addEventListener('keydown', handleKeyPress);
     dispatch('open');
   }
-
-  // theming variables:
-  export let buttonBackgroundColor = '#fff';
-  export let buttonBorderColor = '#eee';
-  export let buttonTextColor = '#333';
-  export let highlightColor = '#f7901e';
-  export let dayBackgroundColor = 'none';
-  export let dayTextColor = '#4a4a4a';
-  export let dayHighlightedBackgroundColor = '#efefef';
-  export let dayHighlightedTextColor = '#4a4a4a';
 </script>
-
-<div 
-  class="datepicker" 
-  class:open="{isOpen}" 
-  class:closing="{isClosing}"
-  style='
-    --button-background-color: {buttonBackgroundColor};
-    --button-border-color: {buttonBorderColor};
-    --button-text-color: {buttonTextColor};
-    --highlight-color: {highlightColor};
-    --day-background-color: {dayBackgroundColor};
-    --day-text-color: {dayTextColor};
-    --day-highlighted-background-color: {dayHighlightedBackgroundColor};
-    --day-highlighted-text-color: {dayHighlightedTextColor};
-  '
->
-  <Popover
-    bind:this="{popover}"
-    bind:open="{isOpen}"
-    bind:shrink="{isClosing}"
-    {trigger}
-    on:opened="{registerOpen}"
-    on:closed="{registerClose}"
-  >
-    <div slot="trigger">
-      <slot>
-        {#if !trigger}
-        <button class="calendar-button" type="button">
-          {formattedSelected}
-        </button>
-        {/if}
-      </slot>
-    </div>
-    <div slot="contents">
-      <div class="calendar">
-        <NavBar 
-          {month}
-          {year}
-          {start}
-          {end}
-          {canIncrementMonth}
-          {canDecrementMonth}
-          {monthsOfYear}
-          on:monthSelected={e => changeMonth(e.detail)}
-          on:incrementMonth={e => incrementMonth(e.detail)} 
-        />
-        <div class="legend">
-          {#each sortedDaysOfWeek as day}
-          <span>{day[1]}</span>
-          {/each}
-        </div>
-        <Month {visibleMonth} {selected} {highlighted} {shouldShakeDate} {start}
-        {end} id={visibleMonthId} on:dateSelected={e => registerSelection(e.detail)} />
-      </div>
-    </div>
-  </Popover>
-</div>
 
 <style>
   .datepicker {
     display: inline-block;
-    margin: 0 auto;
     text-align: center;
     overflow: visible;
   }
@@ -324,8 +332,8 @@
     padding: 10px;
     padding-top: 0;
   }
-
-  @media (min-width: 480px) {
+  
+  @media (min-width: 600px) {
     .calendar {
       height: auto;
       width: 340px;
@@ -333,15 +341,85 @@
     }
   }
 
-  .legend {
-    color: #4a4a4a;
-    padding: 10px 0;
-    margin-bottom: 5px;
+
+  img[src*='icon_calendar']{
+    width: 20px;
+    float: left;
+    margin-right: 10px;
   }
 
-  .legend span {
-    width: 14.285714%;
-    display: inline-block;
-    text-align: center;
+  .search-icon{
+    background-color: #f5f5f5;
+    float: right;
+    margin-left: 20px;
+    margin-right: -20px;
+    margin-top: -10px;
+    margin-bottom: -10px;
+    width: 60px;
+    height: 40px;
+    border-radius: 0 5px 5px 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-left: 1px solid #E0E0E0;
+  }
+  img[src*='icon_search']{
+    width: 20px;
   }
 </style>
+
+<div
+  class="datepicker"
+  class:open={isOpen}
+  class:closing={isClosing}
+  style={wrapperStyle}>
+  <Popover
+    {trigger}
+    bind:this={popover}
+    bind:open={isOpen}
+    bind:shrink={isClosing}
+    on:opened={registerOpen}
+    on:closed={registerClose}>
+    <div slot="trigger">
+      <slot>
+        {#if !trigger}
+          <button class="calendar-button" type="button">
+          <img src="assets/icon_calendar.svg" alt="calendar icon" />
+            {formattedCombined}
+          <span class="search-icon">
+            <img src="assets/icon_search.svg" alt="search icon" />
+          </span>
+          </button>
+        {/if}
+      </slot>
+    </div>
+    <div slot="contents">
+      <div class="calendar" style="width: {width}px">
+        <NavBar
+          {month}
+          {secMonth}
+          {year}
+          {secYear}
+          {start}
+          {end}
+          {canIncrementMonth}
+          {canDecrementMonth}
+          {canIncrementSecMonth}
+          {canDecrementSecMonth}
+          on:monthSelected={e => changeMonth(e.detail)}
+          on:monthSelected={e => changeSecMonth(e.detail)}
+          on:incrementMonth={e => incrementMonth(e.detail)}
+          on:incrementSecMonth={e => incrementSecMonth(e.detail)} />
+        <Months
+          {visibleMonth}
+          {visibleSecMonth}
+          {selected}
+          {selectedEnd}
+          {highlighted}
+          {shouldShakeDate}
+          id={visibleMonthsId}
+          on:dateSelected={e => registerSelection(e.detail)} />
+      </div>
+    </div>
+  </Popover>
+</div>
