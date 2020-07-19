@@ -1,7 +1,7 @@
 {
   "name": "@malipetek/svelte-calendar",
   "svelte": "src/Components/Datepicker.svelte",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "MIT",
   "devDependencies": {
     "es6-object-assign": "^1.1.0",
